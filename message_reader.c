@@ -16,7 +16,7 @@ int main(int argc, char const *argv[]) {
     char buffer_for_message[BUF_LEN];
 
     if (argc != 3) {
-        perror("the number of arguments must be two");
+        perror("nonvalid number of arguments");
         exit(1);
     }
     file_desc = open(argv[1], O_RDONLY);
