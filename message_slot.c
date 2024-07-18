@@ -2,176 +2,175 @@
 #define __KERNEL__
 #undef MODULE
 #define MODULE
+#define BUF_LEN 128
+#define SUCCESS 0
+#define DEVICE_NAME "message_slot"
+#define MAJOR_NUM 235
+#define MSG_SLOT_CHANNEL _IOW(MAJOR_NUM, 0, unsigned int)
 
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/fs.h>
-// #include <linux/fs/filemap.h>
-#include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/string.h>
+#include <linux/slab.h>
 
 MODULE_LICENSE("GPL");
 
 #include "message_slot.h"
 
-static message_channel *message_slots[MAX_MINOR_NUM];
+static channelList message_slot_device_files[257];
 
-// Helper linked list functions:
+static int device_open(struct inode *inode,struct file *file) {
+    return SUCCESS;
+}
 
-int free_list(message_channel *head)
-{
-    message_channel *curr = head;
-    message_channel *next;
-
-    while (curr != NULL)
-    {
-        next = curr->next;
-        kfree(curr);
-        curr = next;
+static ssize_t device_read( struct file *file,char __user *buffer,size_t length,loff_t *offset){
+    channelNode* cur_channel;
+    int i, minor_num;
+    if (buffer == NULL){
+        printk("Buffer pointer is NULL\n");
+        return -EINVAL;
     }
-
-    head = NULL;
-    return 0;
-}
-// Device Functions
-
-static int device_open(struct inode *inode, struct file *file)
-{
-    return 0;
-}
-
-static int device_release(struct inode *inode, struct file *file)
-{
-    int minor_num = iminor(inode);
-    return free_list(message_slots[minor_num]);
-}
-
-static ssize_t device_read(struct file *file, char __user *buffer, size_t length, loff_t *offset)
-{
-    message_channel *channel = (message_channel *)file->private_data;
-
-    if (channel == NULL || channel->message == NULL)
+    cur_channel = (channelNode *)file->private_data;
+    minor_num = iminor(file->f_inode);
+    if (cur_channel == NULL){
+        printk("No channel has been set for the file descriptor of this minor %d\n", minor_num);
+        return -EINVAL;
+    }
+    if (cur_channel->len_message == 0){
+        printk("No message in channel %d of minor %d\n", cur_channel->channel_id, minor_num);
         return -EWOULDBLOCK;
-
-    if (channel->length > length)
+    }
+    if (cur_channel->len_message > length){
+        printk("The provided buffer length is too small to hold the last message written in channel %d of minor %d\n", cur_channel->channel_id, minor_num);
         return -ENOSPC;
-
-    return length - copy_to_user(buffer, channel->message, length);
-}
-
-static ssize_t device_write(struct file *file, const char __user *buffer, size_t length, loff_t *offset)
-{
-    int bytes_written;
-    message_channel *channel = (message_channel *)file->private_data;
-
-    if (channel == NULL)
-        return -EINVAL;
-
-    if (length == 0 || length > BUF_SIZE)
-        return -EMSGSIZE;
-
-    bytes_written = length - copy_from_user(channel->message, buffer, length);
-    channel->length = bytes_written;
-    return bytes_written;
-}
-
-static long device_ioctl(struct file *file, unsigned int ioctl_command_id, unsigned long ioctl_param)
-{
-    int minor_num;
-    message_channel *channel, *curr, *prev;
-    if (ioctl_command_id != MSG_SLOT_CHANNEL)
-    {
-        printk("ERROR: ioctl command id is not valid \n");
-        return -EINVAL;
     }
-
-    if (ioctl_param == 0)
-    {
-        printk("ERROR: channel id is not valid \n");
-        return -EINVAL;
-    }
-
-    minor_num = iminor(file_inode(file));
-
-    curr = message_slots[minor_num];
-    prev = curr;
-
-    while (curr != NULL)
-    {
-        if (curr->channel_id == minor_num)
-        {
-            file->private_data = curr;
-            return 0;
+    for (i = 0; i < cur_channel->len_message; i++){
+        if (put_user(cur_channel->message[i], &buffer[i]) != 0){
+            printk("put_user failed\n");
+            return -EFAULT;
         }
-        prev = curr;
-        curr = curr->next;
     }
-
-    channel = (message_channel *)kmalloc(sizeof(message_channel), GFP_KERNEL);
-    channel->channel_id = minor_num;
-    channel->next = NULL;
-
-    if (prev == NULL)
-    {
-        prev = channel;
-        file->private_data = prev;
-        return 0;
-    }
-
-    prev->next = channel;
-    file->private_data = channel;
-
-    return 0;
+    printk("Read message from channel %d of minor %d\n", cur_channel->channel_id, minor_num);
+    return i;
 }
 
-// Device Setup
+static ssize_t device_write( struct file *file,const char __user *buffer,size_t length,loff_t *offset){
+    channelNode* cur_channel;
+    int i, minor_num;
+    char temp_message[BUF_LEN];
+    if (buffer == NULL){
+        printk("Buffer pointer is NULL\n");
+        return -EINVAL;
+    }
+    minor_num = iminor(file->f_inode);
+    cur_channel = (channelNode *)file->private_data;
+    if (cur_channel == NULL){
+        printk("No channel has been set for this file descriptor of minor %d\n", minor_num);
+        return -EINVAL;
+    }
+    if (length == 0 || length > BUF_LEN){
+        printk("The passed message length is 0 or more than 128\n");
+        return -EMSGSIZE;
+    }
+    for (i = 0; i < length; i++){
+        if (get_user(temp_message[i], &buffer[i]) != 0){
+            printk("get_user failed\n");
+            return -EFAULT;
+        }
+    }
+    cur_channel->len_message = i;
+    for (i = 0; i < cur_channel->len_message; i++){
+        cur_channel->message[i] = temp_message[i];
+}
+    printk("Write message to channel %d of minor %d\n", cur_channel->channel_id, minor_num);
+    return i;
+}
+
+static long device_ioctl( struct file* file,unsigned int   ioctl_command_id,unsigned long  ioctl_param ){
+    channelNode *cur_channel_node, *last_node;
+    int minor_num;
+    if (ioctl_command_id != MSG_SLOT_CHANNEL){
+        printk("The command in ioctl is not MSG_SLOT_CHANNEL\n");
+        return -EINVAL;
+    }
+    if (ioctl_param == 0){
+        printk("Channel id shouldn't be zero\n");
+        return -EINVAL;
+    }
+    if (ioctl_param > UINT_MAX){
+        printk("Channel id should be smaller then unsigned int max value\n");
+        return -EINVAL;
+    }
+    minor_num = iminor(file->f_inode);
+    cur_channel_node = message_slot_device_files[minor_num].head;
+    last_node = NULL;
+    while (cur_channel_node != NULL){
+        last_node = cur_channel_node;
+        if(cur_channel_node->channel_id == ioctl_param){
+            break;
+        }
+        cur_channel_node = cur_channel_node->next;
+    }
+    if (cur_channel_node == NULL){
+        cur_channel_node = (channelNode *)kmalloc(sizeof(channelNode), GFP_KERNEL);
+        if (cur_channel_node == NULL){
+            printk("Failing to allocate memory\n");
+            return -ENOMEM;
+        }
+        if (last_node == NULL){
+            message_slot_device_files[minor_num].head = cur_channel_node;
+        }
+        else{
+            last_node->next = cur_channel_node;
+        }
+        cur_channel_node->channel_id = ioctl_param;
+        cur_channel_node->len_message = 0;
+        cur_channel_node->next = NULL;
+    }
+    file->private_data = cur_channel_node;
+    printk("Ioctl of channel %d of minor %d\n", cur_channel_node->channel_id, minor_num);
+    return SUCCESS;
+}
 
 struct file_operations Fops = {
-    .owner = THIS_MODULE,
-    .read = device_read,
-    .write = device_write,
-    .open = device_open,
-    .unlocked_ioctl = device_ioctl,
-    .release = device_release,
+        .owner = THIS_MODULE,
+        .read = device_read,
+        .write = device_write,
+        .open = device_open,
+        .unlocked_ioctl = device_ioctl,
 };
 
-static int __init simple_init(void)
-{
-    int rc = -1, i;
-
-    // Register driver capabilities. Obtain major num
-    rc = register_chrdev(MAJOR_NUM, DEVICE_RANGE_NAME, &Fops);
-
-    // Negative values signify an error
-    if (rc < 0)
-    {
-        printk(KERN_ERR "%s registraion failed for  %d\n", DEVICE_FILE_NAME, MAJOR_NUM);
+static int __init init_message_slot(void){
+    int rc = -1;
+    int i;
+    rc = register_chrdev( MAJOR_NUM, DEVICE_NAME, &Fops );
+    if( rc < 0 ) {
+        printk( KERN_ERR "%s registration failed for  %d\n",
+                DEVICE_NAME, MAJOR_NUM );
         return rc;
     }
-
-    printk("heyeyeeyeyyeyeyeyeyeyafaefaeh");
-    for (i = 0; i < MAX_MINOR_NUM; i++)
-    {
-        message_slots[i] = NULL;
+    for (i = 0; i < 257; i++){
+        message_slot_device_files[i].head = NULL;
     }
-
-    return 0;
+    printk( "Registration is successful \n");
+    return SUCCESS;
 }
 
-//---------------------------------------------------------------
-static void __exit simple_cleanup(void)
-{
+static void __exit cleanup_message_slot(void){
+    channelNode *cur_channel_node, *temp_node;
     int i;
-    // Unregister the device
-    // Should always succeed
-    unregister_chrdev(MAJOR_NUM, DEVICE_RANGE_NAME);
-    for (i = 0; i < MAX_MINOR_NUM; i++)
-    {
-        free_list(message_slots[i]);
+    for (i = 0; i < 257; i++){
+        cur_channel_node = message_slot_device_files[i].head;
+        while (cur_channel_node != NULL){
+            temp_node = cur_channel_node;
+            cur_channel_node = cur_channel_node->next;
+            kfree(temp_node);
+        }
     }
+    unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
 }
 
-//---------------------------------------------------------------
-module_init(simple_init);
-module_exit(simple_cleanup);
+module_init(init_message_slot);
+module_exit(cleanup_message_slot);
