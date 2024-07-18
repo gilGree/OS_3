@@ -15,7 +15,7 @@ int main(int argc, char const *argv[]) {
     unsigned int channel_id;
     
     if (argc != 4) {
-        perror("the number of arguments must be three");
+        perror("nonvalid number of arguments");
         exit(1);
     }
     file_desc = open(argv[1], O_WRONLY);
