@@ -88,7 +88,7 @@ static ssize_t device_write( struct file *file,const char __user *buffer,size_t 
     return i;
 }
 
-static long device_ioctl( struct file* file,unsigned int   ioctl_command_id,unsigned long  ioctl_param ){
+static long device_ioctl( struct file* file,unsigned int ioctl_command_id,unsigned long ioctl_param){
     channelNode *cur_channel_node, *last_node;
     int minor_num;
     if (ioctl_command_id != MSG_SLOT_CHANNEL){
