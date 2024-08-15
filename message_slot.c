@@ -81,7 +81,7 @@ static ssize_t device_read( struct file *file,char __user *buffer,size_t length,
         return -EWOULDBLOCK;
     }
     if (cur_channel->len_message > length){
-        printk("buffer length too small for last message in channel %d of minor %d\n, cur_channel->channel_id, minor_num);
+        printk("buffer length too small for last message in channel %d of minor %d\n", cur_channel->channel_id, minor_num);
         return -ENOSPC;
     }
     for (i = 0; i < cur_channel->len_message; i++){
@@ -99,13 +99,13 @@ static ssize_t device_write( struct file *file,const char __user *buffer,size_t 
     int i, minor_num;
     char temp_message[BUF_LEN];
     if (buffer == NULL){
-        printk("Buffer pointer is NULL\n");
+        printk("buffer pointer is NULL\n");
         return -EINVAL;
     }
     minor_num = iminor(file->f_inode);
     cur_channel = (channelNode *)file->private_data;
     if (cur_channel == NULL){
-        printk("No channel set for this file descriptor of minor %d\n", minor_num);
+        printk("no channel set for this file descriptor of minor %d\n", minor_num);
         return -EINVAL;
     }
     if (length == 0 || length > BUF_LEN){
@@ -154,7 +154,7 @@ static long device_ioctl( struct file* file,unsigned int ioctl_command_id,unsign
     if (cur_channel_node == NULL){
         cur_channel_node = (channelNode *)kmalloc(sizeof(channelNode), GFP_KERNEL);
         if (cur_channel_node == NULL){
-            printk("Failing to allocate memory\n");
+            printk("failing to allocate memory\n");
             return -ENOMEM;
         }
         if (last_node == NULL){
