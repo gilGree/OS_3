@@ -21,6 +21,20 @@ MODULE_LICENSE("GPL");
 
 static channelList message_slot_device_files[257];
 
+/*I forgot to declare it initially, due to it it didnt compile*/
+static ssize_t device_read( struct file *file,char __user *buffer,size_t length,loff_t *offset);
+static int device_open(struct inode *inode,struct file *file);
+static ssize_t device_write( struct file *file,const char __user *buffer,size_t length,loff_t *offset);
+static long device_ioctl( struct file* file,unsigned int ioctl_command_id,unsigned long ioctl_param);
+
+struct file_operations Fops = {
+        .owner = THIS_MODULE,
+        .read = device_read,
+        .write = device_write,
+        .open = device_open,
+        .unlocked_ioctl = device_ioctl,
+};
+
 static int __init init_message_slot(void){
     int rc = -1;
     int i;
@@ -50,14 +64,6 @@ static void __exit cleanup_message_slot(void){
     }
     unregister_chrdev(MAJOR_NUM, DEVICE_NAME);
 }
-
-struct file_operations Fops = {
-        .owner = THIS_MODULE,
-        .read = device_read,
-        .write = device_write,
-        .open = device_open,
-        .unlocked_ioctl = device_ioctl,
-};
 
 static int device_open(struct inode *inode,struct file *file) {
     return SUCCESS;
